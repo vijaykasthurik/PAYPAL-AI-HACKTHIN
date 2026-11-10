@@ -1,0 +1,797 @@
+openapi: 3.1.0
+info:
+  title: PayBridge AI API
+  description: Evidence-first cross-border payment intelligence, investigation, and safe-recovery coordination platform.
+  version: 2.0.0-ENTERPRISE
+servers:
+  - url: /api/v1
+    description: Current server API v1 base
+
+paths:
+  /auth/login:
+    post:
+      summary: Authenticate user session
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Logged in successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/ErrorEnvelope'
+
+  /auth/logout:
+    post:
+      summary: Log out current session
+      operationId: logout
+      responses:
+        '204':
+          description: Logged out
+
+  /auth/me:
+    get:
+      summary: Get active session profile
+      operationId: getMe
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUser'
+        '401':
+          $ref: '#/components/responses/ErrorEnvelope'
+
+  /auth/csrf:
+    get:
+      summary: Retrieve CSRF token for mutating requests
+      operationId: getCsrfToken
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token]
+                properties:
+                  token:
+                    type: string
+
+  /cases:
+    post:
+      summary: Create a new payment case
+      operationId: createCase
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCaseRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentCase'
+        '400':
+          $ref: '#/components/responses/ErrorEnvelope'
+    get:
+      summary: List accessible payment cases
+      operationId: listCases
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: role
+          schema:
+            type: string
+        - in: query
+          name: env
+          schema:
+            type: string
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseListResponse'
+
+  /cases/{id}:
+    get:
+      summary: Get case details (role-projected)
+      operationId: getCase
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentCase'
+        '404':
+          $ref: '#/components/responses/ErrorEnvelope'
+
+  /cases/{id}/readiness:
+    post:
+      summary: Check payment readiness and compliance route rules
+      operationId: checkReadiness
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessReport'
+
+  /cases/{id}/orders:
+    post:
+      summary: Create PayPal order for payment attempt
+      operationId: createOrder
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderCreationResult'
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AmbiguousOutcomeResult'
+        '409':
+          $ref: '#/components/responses/ErrorEnvelope'
+
+  /cases/{id}/capture:
+    post:
+      summary: Capture PayPal order
+      operationId: captureOrder
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [attempt_id]
+              properties:
+                attempt_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentCase'
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AmbiguousOutcomeResult'
+        '409':
+          $ref: '#/components/responses/ErrorEnvelope'
+
+  /cases/{id}/timeline:
+    get:
+      summary: Get case lifecycle event timeline
+      operationId: getTimeline
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimelineResponse'
+
+  /cases/{id}/reconcile:
+    post:
+      summary: Request safe read-only reconciliation
+      operationId: reconcileCase
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [job_id]
+                properties:
+                  job_id:
+                    type: string
+                    format: uuid
+
+  /cases/{id}/investigations:
+    post:
+      summary: Launch multi-agent investigation DAG
+      operationId: startInvestigation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [investigation_id]
+                properties:
+                  investigation_id:
+                    type: string
+                    format: uuid
+
+  /cases/{id}/passport:
+    get:
+      summary: Get Payment Truth Passport
+      operationId: getPassport
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: version
+          schema:
+            type: integer
+        - in: query
+          name: viewer
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentTruthPassport'
+
+  /cases/{id}/truth-gap-graph:
+    get:
+      summary: Get multi-system Truth Gap Graph representation
+      operationId: getTruthGapGraph
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TruthGapGraph'
+
+  /cases/{id}/safe-actions:
+    get:
+      summary: Get allowed and blocked actions from Safe Action Engine
+      operationId: getSafeActions
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SafeActionSet'
+
+  /cases/{id}/stream:
+    get:
+      summary: Server-Sent Events real-time case stream
+      operationId: streamCaseEvents
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Event stream (SSE)
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /demo/scenarios:
+    get:
+      summary: List available interactive demo scenarios
+      operationId: listDemoScenarios
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scenarios:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DemoScenario'
+
+  /demo/scenarios/{scenario}:
+    post:
+      summary: Execute demo scenario (e.g. Golden Demo B)
+      operationId: runDemoScenario
+      parameters:
+        - in: path
+          name: scenario
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [run_id, case_id, environment]
+                properties:
+                  run_id:
+                    type: string
+                    format: uuid
+                  case_id:
+                    type: string
+                    format: uuid
+                  environment:
+                    type: string
+
+components:
+  responses:
+    ErrorEnvelope:
+      description: Standard PayBridge error envelope
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+
+  schemas:
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, correlation_id]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            correlation_id:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+
+    CurrentUser:
+      type: object
+      required: [id, email, display_name, active_tenant, memberships]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        display_name:
+          type: string
+        active_tenant:
+          type: object
+          required: [id, name]
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+        memberships:
+          type: array
+          items:
+            type: object
+            required: [tenant_id, role]
+            properties:
+              tenant_id:
+                type: string
+                format: uuid
+              role:
+                type: string
+
+    LoginResponse:
+      type: object
+      required: [user, active_tenant]
+      properties:
+        user:
+          $ref: '#/components/schemas/CurrentUser'
+        active_tenant:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+
+    PaymentCase:
+      type: object
+      required: [id, tenant_id, amount, currency, sender_country, receiver_country, payment_purpose, environment, provider_state, application_state, receiver_state, case_status, state_version, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        external_reference:
+          type: string
+        sender_user_id:
+          type: string
+          format: uuid
+        receiver_user_id:
+          type: string
+          format: uuid
+        sender_country:
+          type: string
+        receiver_country:
+          type: string
+        payment_purpose:
+          type: string
+        amount:
+          type: string
+        currency:
+          type: string
+        environment:
+          type: string
+          enum: [REAL_SANDBOX, PAYPAL_SIMULATOR, LOCAL_SIMULATION, PRODUCTION]
+        provider_state:
+          type: string
+        last_confirmed_provider_state:
+          type: string
+        application_state:
+          type: string
+        receiver_state:
+          type: string
+        case_status:
+          type: string
+        state_version:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateCaseRequest:
+      type: object
+      required: [amount, currency, sender_country, receiver_country, payment_purpose]
+      properties:
+        external_reference:
+          type: string
+        receiver_email:
+          type: string
+          format: email
+        amount:
+          type: string
+        currency:
+          type: string
+        sender_country:
+          type: string
+        receiver_country:
+          type: string
+        payment_purpose:
+          type: string
+
+    CaseListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentCase'
+        next_cursor:
+          type: string
+
+    ReadinessReport:
+      type: object
+      required: [support_result, requirements, rate_quote]
+      properties:
+        support_result:
+          type: string
+        requirements:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              status:
+                type: string
+              description:
+                type: string
+        rate_quote:
+          type: object
+          properties:
+            source_currency:
+              type: string
+            target_currency:
+              type: string
+            indicative_rate:
+              type: string
+
+    OrderCreationResult:
+      type: object
+      required: [attempt, order_id, approve_url]
+      properties:
+        attempt:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            status:
+              type: string
+        order_id:
+          type: string
+        approve_url:
+          type: string
+
+    AmbiguousOutcomeResult:
+      type: object
+      required: [outcome, safe_action, message]
+      properties:
+        outcome:
+          type: string
+          enum: [UNKNOWN]
+        safe_action:
+          type: string
+          enum: [DO_NOT_REPEAT_CHECKOUT]
+        message:
+          type: string
+
+    TimelineEvent:
+      type: object
+      required: [id, event_type, status_observed, source_trust, occurred_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+        status_observed:
+          type: string
+        source_trust:
+          type: string
+        verified:
+          type: boolean
+        occurred_at:
+          type: string
+          format: date-time
+
+    TimelineResponse:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelineEvent'
+
+    PaymentTruthPassport:
+      type: object
+      required: [id, case_id, version, viewer_role, confirmed_facts, uncertain_facts, next_safe_action, content_sha256]
+      properties:
+        id:
+          type: string
+          format: uuid
+        case_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        viewer_role:
+          type: string
+        confirmed_facts:
+          type: array
+          items:
+            type: object
+            required: [code, statement, evidence_id, tier]
+            properties:
+              code:
+                type: string
+              statement:
+                type: string
+              evidence_id:
+                type: string
+              tier:
+                type: integer
+        uncertain_facts:
+          type: array
+          items:
+            type: object
+            required: [statement, reason]
+            properties:
+              statement:
+                type: string
+              reason:
+                type: string
+        next_safe_action:
+          type: object
+          required: [action, rationale]
+          properties:
+            action:
+              type: string
+            rationale:
+              type: string
+        content_sha256:
+          type: string
+
+    TruthGapGraph:
+      type: object
+      required: [lanes, nodes, edges, gaps]
+      properties:
+        lanes:
+          type: array
+          items:
+            type: string
+        nodes:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              lane:
+                type: string
+              label:
+                type: string
+              state:
+                type: string
+              evidence_tier:
+                type: integer
+        edges:
+          type: array
+          items:
+            type: object
+            properties:
+              from:
+                type: string
+              to:
+                type: string
+              relation:
+                type: string
+        gaps:
+          type: array
+          items:
+            type: object
+            properties:
+              gap_id:
+                type: string
+              severity:
+                type: string
+              description:
+                type: string
+
+    SafeActionSet:
+      type: object
+      required: [allowed, blocked]
+      properties:
+        allowed:
+          type: array
+          items:
+            type: object
+            properties:
+              action:
+                type: string
+              description:
+                type: string
+        blocked:
+          type: array
+          items:
+            type: object
+            properties:
+              action:
+                type: string
+              reason:
+                type: string
+
+    DemoScenario:
+      type: object
+      required: [id, label, description, mode]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        mode:
+          type: string

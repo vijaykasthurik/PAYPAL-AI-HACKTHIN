@@ -1,0 +1,49 @@
+# Binaries and build outputs
+/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Node dependencies and build
+node_modules/
+apps/web/node_modules/
+apps/web/dist/
+.npm
+.eslintcache
+
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+*.cert
+
+# Operating System files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE and editors
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*~
+
+# Coverage and profiling
+coverage/
+*.coverprofile
+trace.out
+profile.pprof
+
+# Temporary and local test outputs
+tmp/
+scratch/
+test-reports/
